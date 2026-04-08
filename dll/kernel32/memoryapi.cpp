@@ -17,6 +17,7 @@
 #include <map>
 #include <mutex>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <utility>
 
@@ -205,7 +206,8 @@ HANDLE WINAPI CreateFileMappingA(HANDLE hFile, LPSECURITY_ATTRIBUTES lpFileMappi
 		}
 		mapping->maxSize = size;
 	} else {
-		auto file = wibo::handles().getAs<FileObject>(hFile);
+		HandleMeta meta{};
+		auto file = wibo::handles().getAs<FileObject>(hFile, &meta);
 		if (!file || !file->valid()) {
 			setLastError(ERROR_INVALID_HANDLE);
 			return NO_HANDLE;
@@ -215,14 +217,35 @@ HANDLE WINAPI CreateFileMappingA(HANDLE hFile, LPSECURITY_ATTRIBUTES lpFileMappi
 			setLastErrorFromErrno();
 			return NO_HANDLE;
 		}
-		mapping->fd = dupFd;
+		struct stat st {};
+		if (fstat(dupFd, &st) != 0) {
+			int err = errno;
+			close(dupFd);
+			setLastError(wibo::winErrorFromErrno(err));
+			return NO_HANDLE;
+		}
+		uint64_t fileSize = st.st_size >= 0 ? static_cast<uint64_t>(st.st_size) : 0;
 		if (size == 0) {
-			off_t fileSize = lseek(dupFd, 0, SEEK_END);
-			if (fileSize < 0) {
+			size = fileSize;
+		} else if (size > fileSize) {
+			if ((meta.grantedAccess & (FILE_WRITE_DATA | FILE_APPEND_DATA)) == 0) {
+				close(dupFd);
+				setLastError(ERROR_ACCESS_DENIED);
 				return NO_HANDLE;
 			}
-			size = static_cast<uint64_t>(fileSize);
+			if (size > static_cast<uint64_t>(std::numeric_limits<off_t>::max())) {
+				close(dupFd);
+				setLastError(ERROR_INVALID_PARAMETER);
+				return NO_HANDLE;
+			}
+			if (ftruncate(dupFd, static_cast<off_t>(size)) != 0) {
+				int err = errno;
+				close(dupFd);
+				setLastError(wibo::winErrorFromErrno(err));
+				return NO_HANDLE;
+			}
 		}
+		mapping->fd = dupFd;
 		mapping->maxSize = size;
 	}
 

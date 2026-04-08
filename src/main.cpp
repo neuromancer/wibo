@@ -11,6 +11,7 @@
 #include "types.h"
 #include "version_info.h"
 
+#include <array>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -97,6 +98,37 @@ void wibo::uninstallTebForCurrentThread() {
 static std::string getExeName(const char *argv0) {
 	std::filesystem::path exePath(argv0 ? argv0 : "wibo");
 	return exePath.filename().string();
+}
+
+static bool applyExecutableCompatPatches(wibo::ModuleInfo &module) {
+	if (!module.executable || module.normalizedName != "link.exe") {
+		return true;
+	}
+
+	// MSVC 6 LINK.EXE gates its temporary-file helper behind a mode byte that
+	// remains unset under wibo, which makes it abort with LNK1104 "TEMPFILE"
+	// before it even attempts the file open. Force the normal helper path.
+	constexpr uint32_t kLinkTempfileGateRva = 0x0000b784;
+	constexpr size_t kLinkTempfilePatchOffset = 11;
+	static constexpr std::array<uint8_t, 15> kLinkTempfileGateBytes = {
+		0xa0, 0x20, 0x95, 0x46, 0x00, 0x53, 0x55, 0x56, 0x84, 0xc0, 0x57, 0x75, 0x0b, 0x5f, 0x5e,
+	};
+
+	if (kLinkTempfileGateRva + kLinkTempfileGateBytes.size() > module.executable->imageSize) {
+		fprintf(stderr, "wibo: LINK.EXE compatibility patch target is out of range\n");
+		return false;
+	}
+
+	auto *gate = module.executable->fromRVA<uint8_t>(kLinkTempfileGateRva);
+	if (std::memcmp(gate, kLinkTempfileGateBytes.data(), kLinkTempfileGateBytes.size()) != 0) {
+		fprintf(stderr, "wibo: LINK.EXE compatibility patch signature mismatch\n");
+		return false;
+	}
+
+	gate[kLinkTempfilePatchOffset] = 0xeb;
+	DEBUG_LOG("Applied LINK.EXE tempfile compatibility patch at RVA 0x%x\n", kLinkTempfileGateRva +
+				  static_cast<uint32_t>(kLinkTempfilePatchOffset));
+	return true;
 }
 
 static void printHelp(const char *argv0, bool error) {
@@ -460,6 +492,9 @@ int main(int argc, char **argv) {
 	}
 	DEBUG_LOG("Registered main module %s at %p\n", wibo::mainModule->normalizedName.c_str(),
 			  wibo::mainModule->executable->imageBase);
+	if (!applyExecutableCompatPatches(*wibo::mainModule)) {
+		return 1;
+	}
 
 	if (!wibo::mainModule->executable->resolveImports()) {
 		fprintf(stderr, "Failed to resolve imports for main module (DLL initialization failure?)\n");
