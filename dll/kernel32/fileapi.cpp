@@ -938,10 +938,14 @@ HANDLE WINAPI CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShar
 						  DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) {
 	HOST_CONTEXT_GUARD();
 	(void)hTemplateFile;
+	DEBUG_LOG("CreateFileA(entry filenamePtr=%p, desiredAccess=0x%x, shareMode=%u, creationDisposition=%u, flags=0x%x)\n",
+			  lpFileName, dwDesiredAccess, dwShareMode, dwCreationDisposition,
+			  dwFlagsAndAttributes);
 	if (!lpFileName) {
 		setLastError(ERROR_INVALID_PARAMETER);
 		return INVALID_HANDLE_VALUE;
 	}
+	DEBUG_LOG("CreateFileA(nonnull filenamePtr=%p)\n", lpFileName);
 
 	HANDLE consoleHandle = INVALID_HANDLE_VALUE;
 	if (tryOpenConsoleDevice(dwDesiredAccess, dwShareMode, dwCreationDisposition, dwFlagsAndAttributes, consoleHandle,
@@ -1199,6 +1203,77 @@ BOOL WINAPI DeleteFileW(LPCWSTR lpFileName) {
 	}
 	std::string name = wideStringToString(lpFileName);
 	return DeleteFileA(name.c_str());
+}
+
+BOOL WINAPI CopyFileA(LPCSTR lpExistingFileName, LPCSTR lpNewFileName, BOOL bFailIfExists) {
+	HOST_CONTEXT_GUARD();
+	DEBUG_LOG("CopyFileA(%s, %s, %u)\n", lpExistingFileName ? lpExistingFileName : "(null)",
+			  lpNewFileName ? lpNewFileName : "(null)", bFailIfExists);
+	if (!lpExistingFileName || !lpNewFileName) {
+		setLastError(ERROR_INVALID_PARAMETER);
+		return FALSE;
+	}
+
+	auto fromPath = files::pathFromWindows(lpExistingFileName);
+	auto toPath = files::pathFromWindows(lpNewFileName);
+
+	std::error_code ec;
+	std::filesystem::file_status fromStatus = std::filesystem::status(fromPath, ec);
+	if (ec) {
+		setLastError(wibo::winErrorFromErrno(ec.value()));
+		return FALSE;
+	}
+	if (!std::filesystem::exists(fromStatus)) {
+		setLastError(ERROR_FILE_NOT_FOUND);
+		return FALSE;
+	}
+	if (std::filesystem::is_directory(fromStatus)) {
+		setLastError(ERROR_ACCESS_DENIED);
+		return FALSE;
+	}
+
+	std::filesystem::file_status toStatus = std::filesystem::status(toPath, ec);
+	if (ec) {
+		setLastError(wibo::winErrorFromErrno(ec.value()));
+		return FALSE;
+	}
+	if (std::filesystem::exists(toStatus) && std::filesystem::is_directory(toStatus)) {
+		setLastError(ERROR_ACCESS_DENIED);
+		return FALSE;
+	}
+	if (bFailIfExists && std::filesystem::exists(toStatus)) {
+		setLastError(ERROR_FILE_EXISTS);
+		return FALSE;
+	}
+
+	auto copyOptions =
+		bFailIfExists ? std::filesystem::copy_options::none : std::filesystem::copy_options::overwrite_existing;
+	bool copied = std::filesystem::copy_file(fromPath, toPath, copyOptions, ec);
+	if (!copied || ec) {
+		if (ec) {
+			setLastError(wibo::winErrorFromErrno(ec.value()));
+		} else if (bFailIfExists) {
+			setLastError(ERROR_FILE_EXISTS);
+		} else {
+			setLastError(ERROR_ACCESS_DENIED);
+		}
+		return FALSE;
+	}
+
+	setLastError(ERROR_SUCCESS);
+	return TRUE;
+}
+
+BOOL WINAPI CopyFileW(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, BOOL bFailIfExists) {
+	HOST_CONTEXT_GUARD();
+	DEBUG_LOG("CopyFileW -> ");
+	if (!lpExistingFileName || !lpNewFileName) {
+		setLastError(ERROR_INVALID_PARAMETER);
+		return FALSE;
+	}
+	std::string from = wideStringToString(lpExistingFileName);
+	std::string to = wideStringToString(lpNewFileName);
+	return CopyFileA(from.c_str(), to.c_str(), bFailIfExists);
 }
 
 BOOL WINAPI MoveFileA(LPCSTR lpExistingFileName, LPCSTR lpNewFileName) {
@@ -1745,8 +1820,9 @@ DWORD WINAPI GetShortPathNameW(LPCWSTR lpszLongPath, LPWSTR lpszShortPath, DWORD
 
 UINT WINAPI GetTempFileNameA(LPCSTR lpPathName, LPCSTR lpPrefixString, UINT uUnique, LPSTR lpTempFileName) {
 	HOST_CONTEXT_GUARD();
-	DEBUG_LOG("GetTempFileNameA(%s, %s, %u)\n", lpPathName ? lpPathName : "(null)",
-			  lpPrefixString ? lpPrefixString : "(null)", uUnique);
+	DEBUG_LOG("GetTempFileNameA(path=%p:%s, prefix=%p:%s, unique=%u, out=%p)\n", lpPathName,
+			  lpPathName ? lpPathName : "(null)", lpPrefixString, lpPrefixString ? lpPrefixString : "(null)", uUnique,
+			  lpTempFileName);
 	if (!lpPathName || !lpPrefixString || !lpTempFileName) {
 		setLastError(ERROR_INVALID_PARAMETER);
 		return 0;
@@ -1779,10 +1855,26 @@ UINT WINAPI GetTempFileNameA(LPCSTR lpPathName, LPCSTR lpPrefixString, UINT uUni
 		path = files::pathFromWindows(lpPathName) / uniqueStr;
 	}
 	std::string str = files::pathToWindows(path);
-	DEBUG_LOG(" -> %s\n", str.c_str());
-	strncpy(lpTempFileName, str.c_str(), MAX_PATH);
-	lpTempFileName[MAX_PATH - 1] = '\0';
+	DEBUG_LOG(" -> %s (unique=%u)\n", str.c_str(), uUnique);
+	std::memcpy(lpTempFileName, str.c_str(), str.size() + 1);
+	DEBUG_LOG("    wrote out buffer: %s\n", lpTempFileName);
+	setLastError(ERROR_SUCCESS);
 	return uUnique;
+}
+
+UINT WINAPI GetTempFileNameW(LPCWSTR lpPathName, LPCWSTR lpPrefixString, UINT uUnique, LPWSTR lpTempFileName) {
+	HOST_CONTEXT_GUARD();
+	std::string pathNameA = wideStringToString(lpPathName);
+	std::string prefixA = wideStringToString(lpPrefixString);
+	DEBUG_LOG("GetTempFileNameW(%s, %s, %u)\n", pathNameA.c_str(), prefixA.c_str(), uUnique);
+	char tempFileNameA[MAX_PATH];
+	UINT result = GetTempFileNameA(pathNameA.c_str(), prefixA.c_str(), uUnique, tempFileNameA);
+	if (result && lpTempFileName) {
+		auto wide = stringToWideString(tempFileNameA);
+		size_t len = wstrlen(wide.data());
+		wstrncpy(lpTempFileName, wide.data(), len + 1);
+	}
+	return result;
 }
 
 DWORD WINAPI GetTempPathA(DWORD nBufferLength, LPSTR lpBuffer) {
@@ -1795,13 +1887,32 @@ DWORD WINAPI GetTempPathA(DWORD nBufferLength, LPSTR lpBuffer) {
 		return 0;
 	}
 
-	const char *tmpDirEnv = getenv("TMPDIR");
 	std::string pathStr;
-	if (tmpDirEnv) {
-		auto path = std::filesystem::canonical(tmpDirEnv);
-		pathStr = files::pathToWindows(path);
-	} else {
+	for (const char *envName : {"TMP", "TEMP", "TMPDIR"}) {
+		const char *value = getenv(envName);
+		if (!value || !*value) {
+			continue;
+		}
+
+		std::filesystem::path hostPath;
+		std::string candidate(value);
+		if (candidate.find('\\') != std::string::npos ||
+			(candidate.size() >= 2 && candidate[1] == ':' && candidate[0] != '/')) {
+			hostPath = files::pathFromWindows(candidate.c_str());
+			pathStr = files::pathToWindows(hostPath.lexically_normal());
+		} else {
+			hostPath = std::filesystem::path(candidate).lexically_normal();
+			if (hostPath.is_absolute()) {
+				hostPath = files::canonicalPath(hostPath);
+			}
+			pathStr = files::pathToWindows(hostPath);
+		}
+		break;
+	}
+	if (pathStr.empty()) {
 		pathStr = "Z:\\tmp\\";
+	} else if (pathStr.back() != '\\') {
+		pathStr += '\\';
 	}
 	size_t len = pathStr.length();
 	if (len + 1 > nBufferLength) {
@@ -1813,6 +1924,7 @@ DWORD WINAPI GetTempPathA(DWORD nBufferLength, LPSTR lpBuffer) {
 	DEBUG_LOG(" -> %s\n", pathStr.c_str());
 	strncpy(lpBuffer, pathStr.c_str(), nBufferLength);
 	lpBuffer[nBufferLength - 1] = '\0';
+	setLastError(ERROR_SUCCESS);
 	return static_cast<DWORD>(len);
 }
 

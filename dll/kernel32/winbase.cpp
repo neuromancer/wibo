@@ -632,6 +632,28 @@ BOOL WINAPI SetDllDirectoryA(LPCSTR lpPathName) {
 	return TRUE;
 }
 
+DWORD WINAPI GetPrivateProfileStringA(LPCSTR lpAppName, LPCSTR lpKeyName, LPCSTR lpDefault,
+									  LPSTR lpReturnedString, DWORD nSize, LPCSTR lpFileName) {
+	HOST_CONTEXT_GUARD();
+	DEBUG_LOG("GetPrivateProfileStringA(%s, %s, %s, %p, %u, %s)\n", lpAppName ? lpAppName : "(null)",
+			  lpKeyName ? lpKeyName : "(null)", lpDefault ? lpDefault : "(null)", lpReturnedString, nSize,
+			  lpFileName ? lpFileName : "(null)");
+	if (lpReturnedString && nSize > 0 && lpDefault) {
+		strncpy(lpReturnedString, lpDefault, nSize - 1);
+		lpReturnedString[nSize - 1] = '\0';
+		return (DWORD)strlen(lpReturnedString);
+	}
+	if (lpReturnedString && nSize > 0) {
+		lpReturnedString[0] = '\0';
+	}
+	return 0;
+}
+
+void WINAPI OutputDebugStringA(LPCSTR lpOutputString) {
+	HOST_CONTEXT_GUARD();
+	DEBUG_LOG("OutputDebugStringA: %s", lpOutputString ? lpOutputString : "(null)");
+}
+
 BOOL WINAPI FindActCtxSectionStringA(DWORD dwFlags, const GUID *lpExtensionGuid, ULONG ulSectionId,
 									 LPCSTR lpStringToFind, PACTCTX_SECTION_KEYED_DATA ReturnedData) {
 	DEBUG_LOG("FindActCtxSectionStringA(%#x, %p, %u, %s, %p)\n", dwFlags, lpExtensionGuid, ulSectionId,
@@ -1306,6 +1328,90 @@ BOOL WINAPI GetDiskFreeSpaceExW(LPCWSTR lpDirectoryName, PULARGE_INTEGER lpFreeB
 	std::string directoryName = wideStringToString(lpDirectoryName);
 	return GetDiskFreeSpaceExA(lpDirectoryName ? directoryName.c_str() : nullptr, lpFreeBytesAvailableToCaller,
 							   lpTotalNumberOfBytes, lpTotalNumberOfFreeBytes);
+}
+
+LPSTR WINAPI lstrcpynA(LPSTR lpString1, LPCSTR lpString2, int iMaxLength) {
+	HOST_CONTEXT_GUARD();
+	DEBUG_LOG("lstrcpynA(%p, %s, %d)\n", lpString1, lpString2 ? lpString2 : "(null)", iMaxLength);
+	if (iMaxLength <= 0)
+		return lpString1;
+	strncpy(lpString1, lpString2 ? lpString2 : "", iMaxLength - 1);
+	lpString1[iMaxLength - 1] = '\0';
+	return lpString1;
+}
+
+LPWSTR WINAPI lstrcpynW(LPWSTR lpString1, LPCWSTR lpString2, int iMaxLength) {
+	HOST_CONTEXT_GUARD();
+	DEBUG_LOG("lstrcpynW(%p, %p, %d)\n", lpString1, lpString2, iMaxLength);
+	if (iMaxLength <= 0)
+		return lpString1;
+	int i = 0;
+	if (lpString2) {
+		for (; i < iMaxLength - 1 && lpString2[i]; i++) {
+			lpString1[i] = lpString2[i];
+		}
+	}
+	lpString1[i] = 0;
+	return lpString1;
+}
+
+LPSTR WINAPI lstrcpyA(LPSTR lpString1, LPCSTR lpString2) {
+	HOST_CONTEXT_GUARD();
+	DEBUG_LOG("lstrcpyA(%p, %s)\n", lpString1, lpString2 ? lpString2 : "(null)");
+	return strcpy(lpString1, lpString2 ? lpString2 : "");
+}
+
+LPWSTR WINAPI lstrcpyW(LPWSTR lpString1, LPCWSTR lpString2) {
+	HOST_CONTEXT_GUARD();
+	DEBUG_LOG("lstrcpyW(%p, %p)\n", lpString1, lpString2);
+	if (!lpString2) {
+		lpString1[0] = 0;
+		return lpString1;
+	}
+	int i = 0;
+	for (; lpString2[i]; i++) {
+		lpString1[i] = lpString2[i];
+	}
+	lpString1[i] = 0;
+	return lpString1;
+}
+
+LPSTR WINAPI lstrcatA(LPSTR lpString1, LPCSTR lpString2) {
+	HOST_CONTEXT_GUARD();
+	DEBUG_LOG("lstrcatA(%p, %s)\n", lpString1, lpString2 ? lpString2 : "(null)");
+	return strcat(lpString1, lpString2 ? lpString2 : "");
+}
+
+LPWSTR WINAPI lstrcatW(LPWSTR lpString1, LPCWSTR lpString2) {
+	HOST_CONTEXT_GUARD();
+	DEBUG_LOG("lstrcatW(%p, %p)\n", lpString1, lpString2);
+	if (!lpString2)
+		return lpString1;
+	int len = 0;
+	while (lpString1[len])
+		len++;
+	int i = 0;
+	for (; lpString2[i]; i++) {
+		lpString1[len + i] = lpString2[i];
+	}
+	lpString1[len + i] = 0;
+	return lpString1;
+}
+
+int WINAPI lstrlenA(LPCSTR lpString) {
+	HOST_CONTEXT_GUARD();
+	DEBUG_LOG("lstrlenA(%s)\n", lpString ? lpString : "(null)");
+	if (!lpString)
+		return 0;
+	return static_cast<int>(strlen(lpString));
+}
+
+int WINAPI lstrlenW(LPCWSTR lpString) {
+	HOST_CONTEXT_GUARD();
+	DEBUG_LOG("lstrlenW(%p)\n", lpString);
+	if (!lpString)
+		return 0;
+	return static_cast<int>(wstrlen(lpString));
 }
 
 } // namespace kernel32

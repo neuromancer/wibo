@@ -86,6 +86,8 @@ UINT WINAPI SetHandleCount(UINT uNumber);
 PVOID WINAPI EncodePointer(PVOID Ptr);
 PVOID WINAPI DecodePointer(PVOID Ptr);
 BOOL WINAPI SetDllDirectoryA(LPCSTR lpPathName);
+DWORD WINAPI GetPrivateProfileStringA(LPCSTR lpAppName, LPCSTR lpKeyName, LPCSTR lpDefault, LPSTR lpReturnedString, DWORD nSize, LPCSTR lpFileName);
+void WINAPI OutputDebugStringA(LPCSTR lpOutputString);
 
 BOOL WINAPI FindActCtxSectionStringA(DWORD dwFlags, const GUID *lpExtensionGuid, ULONG ulSectionId,
 									 LPCSTR lpStringToFind, PACTCTX_SECTION_KEYED_DATA ReturnedData);
@@ -131,5 +133,14 @@ BOOL WINAPI GetDiskFreeSpaceExA(LPCSTR lpDirectoryName, PULARGE_INTEGER lpFreeBy
 								PULARGE_INTEGER lpTotalNumberOfBytes, PULARGE_INTEGER lpTotalNumberOfFreeBytes);
 BOOL WINAPI GetDiskFreeSpaceExW(LPCWSTR lpDirectoryName, PULARGE_INTEGER lpFreeBytesAvailableToCaller,
 								PULARGE_INTEGER lpTotalNumberOfBytes, PULARGE_INTEGER lpTotalNumberOfFreeBytes);
+
+LPSTR WINAPI lstrcpynA(LPSTR lpString1, LPCSTR lpString2, int iMaxLength);
+LPWSTR WINAPI lstrcpynW(LPWSTR lpString1, LPCWSTR lpString2, int iMaxLength);
+LPSTR WINAPI lstrcpyA(LPSTR lpString1, LPCSTR lpString2);
+LPWSTR WINAPI lstrcpyW(LPWSTR lpString1, LPCWSTR lpString2);
+LPSTR WINAPI lstrcatA(LPSTR lpString1, LPCSTR lpString2);
+LPWSTR WINAPI lstrcatW(LPWSTR lpString1, LPCWSTR lpString2);
+int WINAPI lstrlenA(LPCSTR lpString);
+int WINAPI lstrlenW(LPCWSTR lpString);
 
 } // namespace kernel32
