@@ -16,6 +16,7 @@
 #include <system_error>
 #include <unistd.h>
 #include <utility>
+#include <limits.h>
 
 kernel32::FsObject::~FsObject() {
 	int fd = std::exchange(this->fd, -1);
