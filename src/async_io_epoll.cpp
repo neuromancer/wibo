@@ -17,6 +17,7 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <limits.h>
 
 #include <fcntl.h>
 #include <sys/epoll.h>
