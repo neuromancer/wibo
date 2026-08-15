@@ -115,14 +115,14 @@ static bool applyExecutableCompatPatches(wibo::ModuleInfo &module) {
 	};
 
 	if (kLinkTempfileGateRva + kLinkTempfileGateBytes.size() > module.executable->imageSize) {
-		fprintf(stderr, "wibo: LINK.EXE compatibility patch target is out of range\n");
-		return false;
+		DEBUG_LOG("Skipping LINK.EXE tempfile compatibility patch: target is out of range\n");
+		return true;
 	}
 
 	auto *gate = module.executable->fromRVA<uint8_t>(kLinkTempfileGateRva);
 	if (std::memcmp(gate, kLinkTempfileGateBytes.data(), kLinkTempfileGateBytes.size()) != 0) {
-		fprintf(stderr, "wibo: LINK.EXE compatibility patch signature mismatch\n");
-		return false;
+		DEBUG_LOG("Skipping LINK.EXE tempfile compatibility patch: signature does not match\n");
+		return true;
 	}
 
 	gate[kLinkTempfilePatchOffset] = 0xeb;
