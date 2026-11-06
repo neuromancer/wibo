@@ -9,6 +9,8 @@
 #include <csignal>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
+#include <limits.h>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -16,7 +18,21 @@
 #include <system_error>
 #include <unistd.h>
 #include <utility>
-#include <limits.h>
+
+namespace {
+
+const std::filesystem::path &driveCRoot() {
+	static const std::filesystem::path root = [] {
+		const char *configured = std::getenv("WIBO_DRIVE_C");
+		if (!configured || !*configured) {
+			return std::filesystem::path{};
+		}
+		return std::filesystem::weakly_canonical(std::filesystem::absolute(configured));
+	}();
+	return root;
+}
+
+} // namespace
 
 kernel32::FsObject::~FsObject() {
 	int fd = std::exchange(this->fd, -1);
@@ -90,8 +106,12 @@ std::filesystem::path pathFromWindows(const char *inStr) {
 		str.erase(0, 4);
 	}
 
-	// Remove the drive letter
-	if (str.rfind("z:/", 0) == 0 || str.rfind("Z:/", 0) == 0 || str.rfind("c:/", 0) == 0 || str.rfind("C:/", 0) == 0) {
+	// C: can name a separate host tree; Z: always names the host root.
+	if ((str.rfind("c:/", 0) == 0 || str.rfind("C:/", 0) == 0) && !driveCRoot().empty()) {
+		auto relative = std::filesystem::path(str.substr(2)).lexically_normal().relative_path();
+		str = (driveCRoot() / relative).string();
+	} else if (str.rfind("z:/", 0) == 0 || str.rfind("Z:/", 0) == 0 || str.rfind("c:/", 0) == 0 ||
+			   str.rfind("C:/", 0) == 0) {
 		str.erase(0, 2);
 	}
 
@@ -133,10 +153,19 @@ std::filesystem::path pathFromWindows(const char *inStr) {
 }
 
 std::string pathToWindows(const std::filesystem::path &path) {
-	std::string str = path.lexically_normal();
+	auto normalized = path.lexically_normal();
+	std::string str = normalized;
 
 	if (path.is_absolute()) {
-		str.insert(0, "Z:");
+		auto relative = driveCRoot().empty() ? std::filesystem::path{} : normalized.lexically_relative(driveCRoot());
+		if (!relative.empty() && *relative.begin() != "..") {
+			str = "C:/";
+			if (relative != ".") {
+				str += relative.string();
+			}
+		} else {
+			str.insert(0, "Z:");
+		}
 	}
 
 	std::replace(str.begin(), str.end(), '/', '\\');

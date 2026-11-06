@@ -57,6 +57,17 @@ wibo path [subcommand options] <path> [path...]
 | ---------- | --------------------------------------------------------------------------------- |
 | `path`     | Convert between host and Windows-style paths (see `wibo path --help` for details) |
 
+### Drive mapping
+
+Set `WIBO_DRIVE_C` to an absolute host directory to expose that tree as `C:\`.
+Paths returned to the guest use `C:\` within that tree and `Z:\` elsewhere.
+For example, `WIBO_DRIVE_C=/build/drive-c` maps `C:\project\output.pdb` to
+`/build/drive-c/project/output.pdb`. This also applies to the `path` subcommand
+and lets compilers record stable Windows paths in their output.
+
+When the variable is unset or empty, both `C:\` and `Z:\` retain their default
+mapping to the host root, and absolute paths are returned with `Z:\`.
+
 ### Examples
 
 #### Normal usage

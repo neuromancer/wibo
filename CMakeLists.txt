@@ -410,6 +410,9 @@ wibo_codegen_module(NAME kernel32 HEADERS
 if (WIBO_ENABLE_FIXTURE_TESTS)
     include(CTest)
 
+    add_test(NAME wibo.path_mapping
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_path_mapping.py $<TARGET_FILE:wibo>)
+
     find_program(WIBO_MINGW_CC i686-w64-mingw32-gcc)
     find_program(WIBO_MINGW_WINDRES i686-w64-mingw32-windres)
 
